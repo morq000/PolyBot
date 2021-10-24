@@ -33,7 +33,7 @@ from telegram.ext import (
 from telegram.replymarkup import ReplyMarkup
 
 from config import *
-
+from google_drive_connector import *
 
 #######################################
 # LOGGING SETTINGS#####################
@@ -90,7 +90,7 @@ def add_client(user_id, first_name, last_name, username, is_bot, contact_time, d
         logger.info(f'В базу данных добавлен новый пользователь {str([user_id, first_name, last_name, username])}, является ботом: {str(is_bot)}')
 
 
-def add_new_application(application_id, creation_time, user_id, first_name, last_name, interested_in,
+def add_new_application_to_DB(application_id, creation_time, user_id, first_name, last_name, interested_in,
                         contact, application_status, subscribed, feedback, db_file=DB_FILE):
     # TODO add successful and not successful returns
     """Add request for a new student or request to contact administrator"""
@@ -101,6 +101,10 @@ def add_new_application(application_id, creation_time, user_id, first_name, last
     cursor = db.cursor()
     cursor.execute("""INSERT INTO applications VALUES (?,?,?,?,?,?,?,?,?,?)""", new_application)
     db.commit()
+
+    # Log that the user has been added
+    logger.info('New application added to the DB. Application ID: '+str(new_application[0]))
+
 
 
 def change_application_status(application_id, application_status, feedback, subscribed='нет', db_file=DB_FILE) -> None:
@@ -129,6 +133,18 @@ def get_applications(application_status=None, db_file=DB_FILE) -> list:
         cursor.execute("""SELECT * FROM applications WHERE application_status=?""", [application_status])
 
     return cursor.fetchall()
+
+######################################
+# Helper classes #####################
+######################################
+
+# class ClientApplication:
+#     """"Hepler class to make client application fields standard"""
+
+    
+
+#     def __init__() -> None:
+#         pass
 
 ######################################
 # MAIN BOT CLASS #####################
@@ -212,6 +228,12 @@ class PolyBot:
         # Callback constants for new applications not about classes (instrument rent, partnership etc.)
         self.APPLICATION_INSTRUMENT_RENT, self.APPLICATION_ROOM_RENT, self.APPLICATION_PARTNERSHIP, self.APPLICATION_CONTACT_US =\
             ['покупка или аренда инструмента', 'аренда помещения', 'сотрудничество', 'свяжитесь со мной']
+
+        # Constants with text descriptions
+        self.LESSONS_MAIN_TEXT = 'Основной принцип нашего обучения — КАЖДЫЙ может научиться. Всё, что необходимо от вас — это желание.' \
+               '\nОбучение строится при индивидуальном подходе, исходя из Ваших особенностей и музыкальных предпочтений.' \
+               '\n\nСтоимость индивидуальных занятий (60 минут):' \
+               '\n- Абонемент на 8 занятий = 4500 р.;\n- Абонемент на 4 занятия = 2400 р;\n- 1 занятие = 650 р.'
 
         # Constants for admin menu states and callbacks
 
@@ -472,13 +494,10 @@ class PolyBot:
         # Adding handlers to the dispatcher
         ###################################################
 
-        #self.dispatcher.add_handler(CommandHandler('start', self.start))
         self.dispatcher.add_handler(self.conversation_handler)
         self.dispatcher.add_handler(self.admin_handler)
         self.dispatcher.add_handler(CommandHandler('start', self.start))
-        #self.dispatcher.add_handler(self.classes_handler)
         self.dispatcher.add_handler(CommandHandler('add_admin', self.add_admin_handler))
-        #self.dispatcher.add_handler(CommandHandler('users', self.output_users))
 
         ###################################################
         # Start listening to the updates
@@ -525,15 +544,14 @@ class PolyBot:
         elif status == 'закрытая':
             status = status + u'\U0001F345'
 
-        text = f'<b>ID заявки:</b>  %s\n' \
-               f'<b>Время:</b>  %s\n' \
+        text = f'<b>Время:</b>  %s\n' \
                f'<b>Имя и фамилия:</b>  %s %s\n' \
                f'<b>Запрос:</b>  %s\n' \
                f'<b>Контактные данные:</b>  %s\n' \
                f'<b>Статус заявки:</b>  %s\n' \
                f'<b>Ученик записался на занятие:</b>  %s\n' \
                f'<b>Комментарий:</b>  %s\n' \
-               % (str(application[0]), str(application[1]), str(application[3]),
+               % (str(application[1]), str(application[3]),
                   str(application[4]), str(application[5]), str(application[6]),
                   str(status), str(application[8]), str(application[9]))
 
@@ -548,42 +566,7 @@ class PolyBot:
     # DB Handlers ##########################
     ########################################
 
-    def output_applications(self, update: Update, context: CallbackContext) -> object:
-        # TODO make callback for working with an application as an object
-        """Command handler to get the list of applications"""
-
-        
-        update.callback_query.answer()
-        update.callback_query.edit_message_text("---Входящие заявки---")
-
-        # Check if specific type of application status is provided. Then connect to DB to get the list of applications.
-        if context.args:
-            application_status = context.args[0]
-            applications = get_applications(application_status)
-        else:
-            applications = get_applications()
-
-        # Output each application with a button to handle it
-        for application in applications:
-            text = self.prettify_application_output(application)
-            buttons = [
-                [
-                    InlineKeyboardButton(text='Открыть заявку', callback_data=application[0])
-                ],
-            ]
-            keyboard = InlineKeyboardMarkup(buttons)
-            update.effective_user.send_message(text=text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-
-        # Add GO BACK button at the end
-        buttons = [
-                [
-                    InlineKeyboardButton(text='Назад в меню', callback_data=self.ADMIN_MENU)
-                ],
-            ]
-        keyboard = InlineKeyboardMarkup(buttons)
-        update.effective_user.send_message("---Конец списка заявок---", reply_markup=keyboard)
-
-        return self.APPLICATION_LIST
+    
 
     def output_users(self, update: Update, context: CallbackContext) -> str:
         """Command handler to get the list of users"""
@@ -632,6 +615,43 @@ class PolyBot:
             return self.ADMIN_MENU
         else:
             update.effective_user.send_message('Мои инструкции говорят, что вам сюда не нужно ' + u'\U0001F916')
+
+    def output_applications(self, update: Update, context: CallbackContext) -> object:
+        # TODO make callback for working with an application as an object
+        """Command handler to get the list of applications"""
+
+        
+        update.callback_query.answer()
+        update.callback_query.edit_message_text("---Входящие заявки---")
+
+        # Check if specific type of application status is provided. Then connect to DB to get the list of applications.
+        if context.args:
+            application_status = context.args[0]
+            applications = get_applications(application_status)
+        else:
+            applications = get_applications()
+
+        # Output each application with a button to handle it
+        for application in applications:
+            text = self.prettify_application_output(application)
+            # buttons = [
+            #     [
+            #         InlineKeyboardButton(text='Открыть заявку', callback_data=application[0])
+            #     ],
+            # ]
+            # keyboard = InlineKeyboardMarkup(buttons)
+            update.effective_user.send_message(text=text, parse_mode=ParseMode.HTML)
+
+        # Add GO BACK button at the end
+        buttons = [
+                [
+                    InlineKeyboardButton(text='Назад в меню', callback_data=self.ADMIN_MENU)
+                ],
+            ]
+        keyboard = InlineKeyboardMarkup(buttons)
+        update.effective_user.send_message("---Конец списка заявок---", reply_markup=keyboard)
+
+        return self.APPLICATION_LIST
 
     def edit_application(self, update: Update, context: CallbackContext) -> str:
         """Shows Application edit menu after admin clicks the Edit button"""
@@ -865,11 +885,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Основной принцип нашего обучения — КАЖДЫЙ может научиться. Всё, что необходимо от вас — это желание.' \
-               '\nОбучение строится при индивидуальном подходе, исходя из Ваших особенностей и музыкальных предпочтений.' \
-               '\n\nСтоимость индивидуальных занятий (60 минут):' \
-               '\n- Абонемент на 8 занятий = 3600 р.;\n- Абонемент на 4 занятия = 2000 р;\n- 1 занятие = 550 р.' \
-               '\n\n Выберите интересующий вас инструмент:'
+        text = 'Выберите интересующий вас инструмент:'
 
         buttons = [
             [
@@ -917,8 +933,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение на гитаре. Текст, фото.'
-
+        text = self.LESSONS_MAIN_TEXT
         buttons = [
             [
                 InlineKeyboardButton(text='Записаться на обучение', callback_data=self.GUITAR)
@@ -938,7 +953,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение укулеле. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -959,7 +974,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение вокалу. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -980,7 +995,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение игре на барабанах. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1001,8 +1016,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение этническим барабанам. Текст, фото.'
-
+        text = self.LESSONS_MAIN_TEXT
         buttons = [
             [
                 InlineKeyboardButton(text='Записаться на обучение', callback_data=self.ETHNIC)
@@ -1022,7 +1036,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение рамочным барабанам. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1043,7 +1057,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение клавишным инструментам. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1064,7 +1078,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение теории музыки и сольфеджио. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1085,8 +1099,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение игре на ханге, рав васте и глюкофонах. Текст, фото.'
-
+        text = self.LESSONS_MAIN_TEXT
         buttons = [
             [
                 InlineKeyboardButton(text='Записаться на обучение', callback_data=self.HANG)
@@ -1106,7 +1119,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучении флейте. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1168,7 +1181,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение этническим барабанам в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1189,7 +1202,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение рамочным барабанам в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1210,7 +1223,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение ударной установке в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1231,7 +1244,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение композиторскому мастерству в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1252,7 +1265,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про раскрытие голоса в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1273,7 +1286,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение диджериду и варгану в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1294,7 +1307,7 @@ class PolyBot:
 
         update.callback_query.answer()
 
-        text = 'Информационная страничка про обучение хангу и раввасту в группе. Текст, фото.'
+        text = self.LESSONS_MAIN_TEXT
 
         buttons = [
             [
@@ -1459,17 +1472,20 @@ class PolyBot:
             context.user_data['contact'] = update.message.text
             update.message.reply_text(text=text)
 
-        # Add collected info to the DB
-        application = [update.update_id, self.timezone_converter(update.effective_message.date), update.effective_user.id,
+        
+        application = [update.update_id, str(self.timezone_converter(update.effective_message.date)), update.effective_user.id,
                        update.effective_user.first_name, update.effective_user.last_name,
                        context.user_data['interested_in'], context.user_data['contact'], 'открытая', 'нет', '-']
-        add_new_application(*application)
-		# Log that the user has been added
-        logger.info('New application added to the DB. Application ID: '+str(application[0]))
+        
+        # Add new application to the DB
+        add_new_application_to_DB(*application)
+
+        # Add new application to Google sheet
+        # Update_Id field not added
+        add_application_to_drive(application[1:])
 
         # Sending new application to admin in new message
         message_text = self.prettify_application_output(application)
-
         for chat_id in ADMIN_CHAT_IDS:
             context.bot.send_message(chat_id=chat_id, text='Поступила новая заявка: \n\n'+message_text, parse_mode=ParseMode.HTML)
 
