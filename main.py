@@ -184,7 +184,7 @@ class PolyBot:
         self.SELECT_AGE, self.SELECT_CALL_TIME, self.GO_BACK, self.GO_BACK_TO_GROUP = map(chr, range(100, 104))
 
         # Constants for types of classes
-        self.INDIVIDUAL_SUBSCRIBE, self.GROUP_SUBSCRIBE, self.ONLINE_SUBSCRIBE, self.CHILDREN_SUBSCRIBE = ['индивидуальные', 'групповые', 'онлайн', 'для детей']
+        self.INDIVIDUAL_SUBSCRIBE, self.GROUP_SUBSCRIBE, self.ONLINE_SUBSCRIBE, self.CHILDREN_SUBSCRIBE = ['индивидуальные', 'групповые', 'онлайн', 'занятия для детей']
 
         # State definitions for data gathering conversation
         self.GATHER_USER_INFO, self.CHOOSE_INSTRUMENT, self.ENTER_AGE, self.LEAVE_CONTACT, self.BYEBYE, self.TALK_IN_TELEGRAM = map(chr, range(150, 156))
@@ -271,6 +271,8 @@ class PolyBot:
                 CallbackQueryHandler(callback=self.gather_user_info, pattern=self.HANG_GROUP),
                 CallbackQueryHandler(callback=self.gather_user_info, pattern=self.COMPOSERSHIP_GROUP),
                 CallbackQueryHandler(callback=self.gather_user_info, pattern=self.OPENING_VOICE_GROUP),
+                CallbackQueryHandler(callback=self.gather_user_info, pattern=self.CHILDREN_SUBSCRIBE),
+                CallbackQueryHandler(callback=self.gather_user_info, pattern=self.ONLINE_SUBSCRIBE),
 
                 # CallbackQueryHandler(
                 #     callback=self.choose_instrument, pattern=self.GROUP_SUBSCRIBE
@@ -450,7 +452,8 @@ class PolyBot:
 				self.SHOWING: [
                     self.gather_data_handler,
                     CallbackQueryHandler(callback=self.individual_classes, pattern=self.GO_BACK),
-                    CallbackQueryHandler(callback=self.group_classes, pattern=self.GO_BACK_TO_GROUP)
+                    CallbackQueryHandler(callback=self.group_classes, pattern=self.GO_BACK_TO_GROUP),
+                    CallbackQueryHandler(callback=self.classes, pattern=self.CLASSES)
                 ]
             },
             fallbacks=[
